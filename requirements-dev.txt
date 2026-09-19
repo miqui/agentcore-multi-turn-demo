@@ -1,2 +1,1 @@
-requirements-dev.txt
-ruff
+ruff==0.16.8
