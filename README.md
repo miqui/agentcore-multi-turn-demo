@@ -14,6 +14,15 @@ running turn counter and history for that session, so you can see state
 persist across separate `invoke` calls as long as they reuse the same
 session id.
 
+## Architecture
+
+- AgentCore Runtime (HTTP protocol) hosts the container image built from
+  this repo's `Dockerfile`; each invocation hits `/invocations` on port 8080.
+- Same `runtimeSessionId` → routed to the same isolated microVM session
+  (15-min idle / 8-hr lifetime); in-process `SessionStore` keeps per-session
+  turn count + history, making the persistence observable in the response.
+- Inbound auth is IAM SigV4 (default) — no secrets in code.
+
 ## Layout
 
 - `src/session_logic.py` — pure, stdlib-only session/turn tracking logic
@@ -29,30 +38,39 @@ session id.
   non-root user, `EXPOSE 8080`, `CMD ["python", "src/agent.py"]`).
 - `.github/workflows/ci.yml` — CI: ruff lint + unittest, no AWS calls.
 
-## Running locally (offline, no AWS needed)
+## Run manually
+
+### 1. Offline tests + lint (verified ✓ — no AWS needed)
 
 ```bash
-python -m unittest discover -s tests -v
-ruff check .   # if ruff is installed
+cd ~/development/agentcore-multi-turn-demo
+python3 -m unittest discover -s tests -v
+uvx ruff check .
 ```
 
-## Deploying (NOT done by this scaffold)
+Expected output: `Ran 12 tests in 0.000s` → `OK`, then
+`All checks passed!`
 
-Deployment requires AWS credentials and the `agentcore` CLI /
-`bedrock-agentcore-starter-toolkit`, e.g. roughly:
-
-`agentcore launch` builds and pushes the image defined by the `Dockerfile`
-in this repo (ARM64 by default) before deploying it to AgentCore Runtime.
+### 2. Deploy to AgentCore Runtime (⏳ pending — requires AWS CLI on host)
 
 ```bash
 pip install -r requirements.txt
 agentcore configure --entrypoint src/agent.py
 agentcore launch
-agentcore invoke '{"prompt": "hi", "session_id": "demo-session-1"}'
-agentcore invoke '{"prompt": "hi again", "session_id": "demo-session-1"}'
 ```
 
-Calling `invoke` twice with the **same** `session_id` should show the turn
-counter incrementing and history accumulating; a **different** `session_id`
-starts a fresh count. These deploy/invoke steps are intentionally not run
-as part of this scaffolding pass.
+Expected: `agentcore launch` builds the Dockerfile image (ARM64 by
+default), pushes it to ECR, and creates the AgentCore Runtime endpoint,
+printing an agent ARN. Not yet run — flagged as the deploy pause point.
+
+### 3. Exercise multi-turn persistence (⏳ pending — same pause point)
+
+```bash
+agentcore invoke '{"prompt": "hi", "session_id": "demo-session-1"}'
+agentcore invoke '{"prompt": "hi again", "session_id": "demo-session-1"}'
+agentcore invoke '{"prompt": "fresh start", "session_id": "demo-session-2"}'
+```
+
+Expected: first two calls share `demo-session-1` → `turn_count` goes
+`1` → `2` and `history` accumulates; `demo-session-2` starts back at
+`turn_count: 1` with its own history.
