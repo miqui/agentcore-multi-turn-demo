@@ -1,0 +1,5 @@
+# SDK deps needed only to run/deploy agent.py against real AgentCore.
+# NOT required to run the offline test suite (tests only import
+# src/session_logic.py, which is stdlib-only).
+bedrock-agentcore
+strands-agents
